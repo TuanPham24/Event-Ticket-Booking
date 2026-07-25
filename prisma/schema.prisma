@@ -1,0 +1,160 @@
+// Concert Ticket Booking Platform - database design
+// See docs/architecture.md for the concurrency-control rationale behind
+// the unique constraints and atomic-update patterns used here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  OPERATOR
+}
+
+enum ConcertStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  FAILED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+
+  bookings           Booking[]
+  voucherRedemptions VoucherRedemption[]
+
+  @@map("users")
+}
+
+model Concert {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  venue       String
+  startTime   DateTime
+  status      ConcertStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  ticketCategories TicketCategory[]
+  bookings         Booking[]
+
+  @@map("concerts")
+}
+
+// availableQuantity is decremented atomically at booking time and is the
+// single source of truth for remaining inventory (see BookingsService).
+model TicketCategory {
+  id                String   @id @default(cuid())
+  concertId         String
+  name              String
+  price             Decimal  @db.Decimal(10, 2)
+  totalQuantity     Int
+  availableQuantity Int
+  createdAt         DateTime @default(now())
+
+  concert      Concert       @relation(fields: [concertId], references: [id], onDelete: Cascade)
+  bookingItems BookingItem[]
+
+  @@map("ticket_categories")
+}
+
+// Create/seed-only per assignment scope (docs/ASSUMPTIONS.md): no update/delete API.
+model Voucher {
+  id                 String       @id @default(cuid())
+  code               String       @unique
+  discountType       DiscountType
+  discountValue      Decimal      @db.Decimal(10, 2)
+  totalQuantity      Int
+  remainingQuantity  Int
+  minOrderAmount     Decimal?     @db.Decimal(10, 2)
+  maxDiscountAmount  Decimal?     @db.Decimal(10, 2)
+  perUserLimit       Int          @default(1)
+  validFrom          DateTime
+  validTo            DateTime
+  createdAt          DateTime     @default(now())
+
+  bookings    Booking[]
+  redemptions VoucherRedemption[]
+
+  @@map("vouchers")
+}
+
+// (userId, idempotencyKey) is unique so a retried POST /bookings with the
+// same Idempotency-Key header can never create a second row.
+model Booking {
+  id             String        @id @default(cuid())
+  userId         String
+  concertId      String
+  status         BookingStatus @default(PENDING_PAYMENT)
+  totalAmount    Decimal       @db.Decimal(10, 2)
+  discountAmount Decimal       @default(0) @db.Decimal(10, 2)
+  voucherId      String?
+  idempotencyKey String
+  holdExpiresAt  DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  user       User                @relation(fields: [userId], references: [id])
+  concert    Concert             @relation(fields: [concertId], references: [id])
+  voucher    Voucher?            @relation(fields: [voucherId], references: [id])
+  items      BookingItem[]
+  redemption VoucherRedemption?
+
+  @@unique([userId, idempotencyKey])
+  @@index([status, holdExpiresAt])
+  @@map("bookings")
+}
+
+model BookingItem {
+  id               String  @id @default(cuid())
+  bookingId        String
+  ticketCategoryId String
+  quantity         Int
+  unitPrice        Decimal @db.Decimal(10, 2)
+
+  booking        Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  ticketCategory TicketCategory @relation(fields: [ticketCategoryId], references: [id])
+
+  @@map("booking_items")
+}
+
+// One row per successful redemption; the (voucherId, userId) unique
+// constraint is what enforces perUserLimit = 1 at the DB level.
+model VoucherRedemption {
+  id        String   @id @default(cuid())
+  voucherId String
+  bookingId String   @unique
+  userId    String
+  createdAt DateTime @default(now())
+
+  voucher Voucher @relation(fields: [voucherId], references: [id])
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([voucherId, userId])
+  @@map("voucher_redemptions")
+}
