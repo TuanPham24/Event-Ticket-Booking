@@ -1,7 +1,8 @@
-# Concert Ticket Booking Platform — Backend
+# Concert Ticket Booking Platform
 
 Take-home assignment submission: a backend for a Concert Ticket Booking Platform covering
-customer-facing booking flows and an internal Operation Dashboard.
+customer-facing booking flows and an internal Operation Dashboard, plus a `frontend/` React app
+that consumes the API.
 
 - **Stack**: NestJS + TypeScript, PostgreSQL (via Prisma), Redis
 - **System design & DB design**: [`docs/architecture.md`](docs/architecture.md)
@@ -38,6 +39,24 @@ npm run start:dev
 ```
 
 The app listens on `http://localhost:3000`. Swagger UI: `http://localhost:3000/api/docs`.
+
+## Frontend
+
+`frontend/` is a separate React + Vite + TypeScript SPA covering both the customer booking flow
+(browse concerts, reserve tickets, apply a voucher, pay/cancel, track bookings) and the operator
+dashboard (manage concerts/ticket categories, publish, create vouchers, monitor & resolve
+bookings). It talks to the API above through a dev-server proxy — it has no other backend of its
+own.
+
+```bash
+cd frontend
+npm install
+npm run dev   # http://localhost:5173, proxies /api/* to http://localhost:3000
+```
+
+Run the backend (`npm run start:dev` from the repo root) first so the proxy has something to talk
+to. Log in with one of the [seeded accounts](#seeded-accounts-password-for-all-password123) —
+`OPERATOR` accounts land on the admin dashboard, `CUSTOMER` accounts land on the booking flow.
 
 ### Troubleshooting: Docker Desktop / WSL2 not starting
 
