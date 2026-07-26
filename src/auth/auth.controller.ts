@@ -5,16 +5,18 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/decorators/current-user.decorator';
+import { REFRESH_TOKEN_COOKIE } from './auth.constants';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -28,33 +30,55 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, user } = await this.authService.register(dto);
-    this.authService.setAuthCookie(res, accessToken);
+    const { accessToken, refreshToken, user } =
+      await this.authService.register(dto);
+    this.authService.setAuthCookies(res, accessToken, refreshToken);
     return { user };
   }
 
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login and receive an httpOnly session cookie' })
+  @ApiOperation({ summary: 'Login and receive httpOnly session cookies' })
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, user } = await this.authService.login(dto);
-    this.authService.setAuthCookie(res, accessToken);
+    const { accessToken, refreshToken, user } =
+      await this.authService.login(dto);
+    this.authService.setAuthCookies(res, accessToken, refreshToken);
+    return { user };
+  }
+
+  @Public()
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Exchange the refresh-token cookie for a fresh token pair',
+  })
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    // Public: the access token has usually expired by the time this is called,
+    // so auth here comes from verifying the refresh-token cookie itself.
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const { accessToken, refreshToken, user } = await this.authService.refresh(
+      cookies?.[REFRESH_TOKEN_COOKIE],
+    );
+    this.authService.setAuthCookies(res, accessToken, refreshToken);
     return { user };
   }
 
   @Public()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Clear the session cookie' })
+  @ApiOperation({ summary: 'Clear the session cookies' })
   logout(@Res({ passthrough: true }) res: Response) {
-    // Public so logging out always succeeds and clears the cookie, even if the
+    // Public so logging out always succeeds and clears the cookies, even if the
     // token has already expired (an authenticated-only logout would 401 and
     // leave the client stuck).
-    this.authService.clearAuthCookie(res);
+    this.authService.clearAuthCookies(res);
     return { success: true };
   }
 

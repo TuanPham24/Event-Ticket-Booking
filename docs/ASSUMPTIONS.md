@@ -47,9 +47,11 @@ A booking has 5 states: `PENDING_PAYMENT` (created, holding inventory), `CONFIRM
 - **No operator invite/admin-created-operator flow.** Public `POST /auth/register` always creates
   a `CUSTOMER`; the one `OPERATOR` account is seeded (`prisma/seed.ts`). A real system would have
   an operator-only user-management surface.
-- **Minimal auth.** JWT with a single long-lived access token (default 1 day, no refresh token
-  rotation), no email verification, no password reset, no rate limiting on login attempts beyond
-  the global throttler.
+- **Minimal auth.** JWT with a short-lived access token (default 15 min) plus a longer-lived
+  refresh token (default 7 days) that the client silently exchanges at `POST /auth/refresh`; both
+  are httpOnly cookies and are rotated statelessly on each refresh (no server-side refresh-token
+  store, so revocation is expiry-based only). No email verification, no password reset, no rate
+  limiting on login attempts beyond the global throttler.
 - **No soft delete / audit log.** Admin actions (status overrides, concert edits) don't leave an
   audit trail. For a real operation dashboard this would likely be one of the first things added.
 - **Redis is a performance layer, not a correctness mechanism**, by design — see

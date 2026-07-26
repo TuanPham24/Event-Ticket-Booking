@@ -18,6 +18,36 @@ export class ApiError extends Error {
   }
 }
 
+// Auth endpoints must never trigger the auto-refresh below: refreshing on a
+// failed login/refresh/logout would either loop or mask the real error.
+const NO_REFRESH_PATHS = new Set([
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/logout',
+]);
+
+// The access token is short-lived; when it expires the browser gets a 401. We
+// silently POST /auth/refresh once and retry the original request, so the user
+// never sees the expiry. Single-flighted so a burst of concurrent 401s shares
+// one refresh call instead of stampeding the endpoint.
+let refreshPromise: Promise<boolean> | null = null;
+
+function refreshSession(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 async function request<T>(
   path: string,
   options: {
@@ -26,18 +56,30 @@ async function request<T>(
     headers?: Record<string, string>;
   } = {},
 ): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: options.method ?? 'GET',
-    // The access token now lives in an httpOnly cookie set by the backend —
-    // this makes the browser attach it automatically instead of us reading
-    // it from JS and adding an Authorization header.
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  const doFetch = () =>
+    fetch(`${BASE_URL}${path}`, {
+      method: options.method ?? 'GET',
+      // The access token lives in an httpOnly cookie set by the backend — this
+      // makes the browser attach it automatically instead of us reading it
+      // from JS and adding an Authorization header.
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      body:
+        options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    });
+
+  let res = await doFetch();
+
+  // On an expired access token, try one transparent refresh + retry.
+  if (res.status === 401 && !NO_REFRESH_PATHS.has(path)) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      res = await doFetch();
+    }
+  }
 
   const text = await res.text();
   const data = text ? JSON.parse(text) : undefined;
@@ -65,6 +107,7 @@ export const api = {
   login: (dto: { email: string; password: string }) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: dto }),
   logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
+  refresh: () => request<AuthResponse>('/auth/refresh', { method: 'POST' }),
   me: () => request<AuthResponse>('/auth/me'),
 
   // --- Concerts (public) ---
