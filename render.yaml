@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: concert-ticket-booking-api
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 1d
+      - key: BOOKING_HOLD_MINUTES
+        value: 10
+      - key: CORS_ORIGIN
+        sync: false
