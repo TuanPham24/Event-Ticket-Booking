@@ -224,3 +224,13 @@ exercise (see `docs/ASSUMPTIONS.md` for why there's no operator invite flow). A 
 `JwtAuthGuard` requires authentication by default; routes are opted out with `@Public()`
 (concert browsing, auth endpoints). A global `RolesGuard` enforces `@Roles(Role.OPERATOR)` on all
 `/admin/*` controllers.
+
+The token itself is carried in an `httpOnly`, `SameSite=Lax` cookie (`access_token`) set by
+`AuthService.setAuthCookie()` on register/login, rather than returned in the JSON body — this
+keeps it out of reach of any JS running on the page, so an XSS bug can't exfiltrate it the way it
+could from `localStorage`. `JwtStrategy` reads the cookie instead of an `Authorization` header
+(`src/auth/strategies/jwt.strategy.ts`). `GET /auth/me` lets the frontend recover the current
+session on page load without ever handling the token directly, and `POST /auth/logout` clears the
+cookie server-side (the frontend can't clear an `httpOnly` cookie itself). CORS is restricted to
+`CORS_ORIGIN` with `credentials: true`, since a wildcard origin can't be combined with
+credentialed requests.

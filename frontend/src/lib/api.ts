@@ -18,12 +18,6 @@ export class ApiError extends Error {
   }
 }
 
-let accessToken: string | null = null;
-
-export function setAccessToken(token: string | null) {
-  accessToken = token;
-}
-
 async function request<T>(
   path: string,
   options: {
@@ -34,9 +28,12 @@ async function request<T>(
 ): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: options.method ?? 'GET',
+    // The access token now lives in an httpOnly cookie set by the backend —
+    // this makes the browser attach it automatically instead of us reading
+    // it from JS and adding an Authorization header.
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...options.headers,
     },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -67,6 +64,8 @@ export const api = {
     request<AuthResponse>('/auth/register', { method: 'POST', body: dto }),
   login: (dto: { email: string; password: string }) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: dto }),
+  logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
+  me: () => request<AuthResponse>('/auth/me'),
 
   // --- Concerts (public) ---
   listConcerts: (page = 1, pageSize = 20) =>

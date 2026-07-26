@@ -77,6 +77,17 @@ Postgres and Redis can run natively instead of via Docker — the app only cares
 - Redis: install [Memurai](https://www.memurai.com/) (Redis-compatible, has a free dev edition),
   or run a portable `redis-server.exe` build, and point `REDIS_URL` at it.
 
+### Troubleshooting: `npm run start:dev` exits after editing a file (Windows)
+
+On Windows, `nest start --watch` recompiles on every file change and tries to `taskkill` the
+previous `node` process before restarting it. That kill can intermittently fail with
+`ERROR: The process with PID ... could not be terminated`, which makes the watch command itself
+exit with code 1 — **even though a server process is usually still listening on the port** (verify
+with `curl http://localhost:3000/health`). This is a watcher process-management quirk, not a
+compile/runtime error. Just re-run `npm run start:dev` to get live-reload back; if the port is
+still held, find and stop the stray process first (`netstat -ano | findstr :3000`, then
+`taskkill /PID <pid> /F`).
+
 ### Seeded accounts (password for all: `Password123!`)
 
 | Role | Email |
@@ -93,8 +104,10 @@ Postgres and Redis can run natively instead of via Docker — the app only cares
    Concerts (Public) → Bookings (Public) → Admin - Bookings**. Requests chain automatically via
    collection variables (tokens, concert/ticket-category/booking IDs).
 
-Alternatively, browse and call everything directly from Swagger UI at `/api/docs` — click
-**Authorize** and paste an `accessToken` from a `POST /auth/login` response.
+Alternatively, browse and call everything directly from Swagger UI at `/api/docs` — the access
+token is an `httpOnly` cookie set automatically by `POST /auth/login` or `/auth/register`, so once
+you've called one of those from the "Try it out" panel, subsequent requests on the same page are
+already authenticated (no `Authorize` step needed).
 
 ## Running tests
 

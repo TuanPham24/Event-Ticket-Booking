@@ -1,67 +1,60 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, setAccessToken } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import type { User } from '../lib/types';
-
-const STORAGE_KEY = 'ctbp.auth';
-
-interface StoredAuth {
-  accessToken: string;
-  user: User;
-}
 
 interface AuthContextValue {
   user: User | null;
   isReady: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-function readStoredAuth(): StoredAuth | null {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as StoredAuth;
-  } catch {
-    return null;
-  }
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    const stored = readStoredAuth();
-    if (stored) {
-      setAccessToken(stored.accessToken);
-      setUser(stored.user);
-    }
-    setIsReady(true);
-  }, []);
+    // One-time migration: older builds stored the JWT in localStorage under
+    // this key. It's now an httpOnly cookie, so scrub the leftover token so it
+    // can't linger (and be stolen via XSS) after the upgrade.
+    localStorage.removeItem('ctbp.auth');
 
-  function persist(auth: StoredAuth) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
-    setAccessToken(auth.accessToken);
-    setUser(auth.user);
-  }
+    // The session lives in an httpOnly cookie the browser sends automatically,
+    // so on load we ask the server who (if anyone) it belongs to instead of
+    // reading anything out of localStorage.
+    api
+      .me()
+      .then((res) => setUser(res.user))
+      .catch((err) => {
+        if (!(err instanceof ApiError && err.status === 401)) {
+          console.error('Failed to restore session', err);
+        }
+        setUser(null);
+      })
+      .finally(() => setIsReady(true));
+  }, []);
 
   async function login(email: string, password: string) {
     const res = await api.login({ email, password });
-    persist(res);
+    setUser(res.user);
   }
 
   async function register(email: string, password: string, fullName: string) {
     const res = await api.register({ email, password, fullName });
-    persist(res);
+    setUser(res.user);
   }
 
-  function logout() {
-    localStorage.removeItem(STORAGE_KEY);
-    setAccessToken(null);
-    setUser(null);
+  async function logout() {
+    // Clear local state regardless of whether the network call succeeds, so a
+    // failed/expired-session logout still lands the user in a logged-out state.
+    try {
+      await api.logout();
+    } finally {
+      setUser(null);
+    }
   }
 
   return (
