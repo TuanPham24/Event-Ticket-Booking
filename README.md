@@ -58,6 +58,33 @@ Run the backend (`npm run start:dev` from the repo root) first so the proxy has 
 to. Log in with one of the [seeded accounts](#seeded-accounts-password-for-all-password123) —
 `OPERATOR` accounts land on the admin dashboard, `CUSTOMER` accounts land on the booking flow.
 
+### Screenshots
+
+**Auth**
+
+![Login](docs/images/screenshots/login.png)
+
+**Customer flow**
+
+| Browse concerts | Select tickets & apply voucher | Hold pending payment |
+|---|---|---|
+| ![Concerts list](docs/images/screenshots/concerts-customer.png) | ![Select tickets](docs/images/screenshots/booking-select-tickets.png) | ![Pending payment](docs/images/screenshots/booking-pending-payment.png) |
+
+The booking hold shows a countdown (`holdExpiresAt`) — if payment isn't made before it expires, the
+cron sweep in `BookingsService` releases the reserved tickets automatically.
+
+![My bookings](docs/images/screenshots/my-bookings.png)
+
+**Operator dashboard**
+
+| Manage concerts | Edit concert & ticket categories |
+|---|---|
+| ![Admin concerts](docs/images/screenshots/admin-concerts.png) | ![Manage concert](docs/images/screenshots/admin-concert-manage.png) |
+
+| Manage vouchers | Monitor & resolve bookings |
+|---|---|
+| ![Admin vouchers](docs/images/screenshots/admin-vouchers.png) | ![Admin bookings](docs/images/screenshots/admin-bookings.png) |
+
 ### Troubleshooting: Docker Desktop / WSL2 not starting
 
 If `docker compose up -d` hangs or `docker` commands fail with a WSL-related error (Windows), the
@@ -116,6 +143,111 @@ npm run test        # unit tests (focused on BookingsService concurrency logic)
 npm run test:watch
 npm run test:cov
 ```
+
+## Database schema
+
+Generated from the current production schema (see [`docs/architecture.md`](docs/architecture.md#2-data-model)
+for the design rationale behind the constraints and indexes).
+
+![ER diagram](docs/images/er-diagram.png)
+
+### Table `users`
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `id` | `text` | Primary |
+| `email` | `text` |  |
+| `passwordHash` | `text` |  |
+| `fullName` | `text` |  |
+| `role` | `Role` |  |
+| `createdAt` | `timestamp` |  |
+
+### Table `concerts`
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `id` | `text` | Primary |
+| `name` | `text` |  |
+| `description` | `text` | Nullable |
+| `venue` | `text` |  |
+| `startTime` | `timestamp` |  |
+| `status` | `ConcertStatus` |  |
+| `createdAt` | `timestamp` |  |
+| `updatedAt` | `timestamp` |  |
+
+### Table `ticket_categories`
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `id` | `text` | Primary |
+| `concertId` | `text` |  |
+| `name` | `text` |  |
+| `price` | `numeric` |  |
+| `totalQuantity` | `int4` |  |
+| `availableQuantity` | `int4` |  |
+| `createdAt` | `timestamp` |  |
+
+### Table `vouchers`
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `id` | `text` | Primary |
+| `code` | `text` |  |
+| `discountType` | `DiscountType` |  |
+| `discountValue` | `numeric` |  |
+| `totalQuantity` | `int4` |  |
+| `remainingQuantity` | `int4` |  |
+| `minOrderAmount` | `numeric` | Nullable |
+| `maxDiscountAmount` | `numeric` | Nullable |
+| `perUserLimit` | `int4` |  |
+| `validFrom` | `timestamp` |  |
+| `validTo` | `timestamp` |  |
+| `createdAt` | `timestamp` |  |
+
+### Table `bookings`
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `id` | `text` | Primary |
+| `userId` | `text` |  |
+| `concertId` | `text` |  |
+| `status` | `BookingStatus` |  |
+| `totalAmount` | `numeric` |  |
+| `discountAmount` | `numeric` |  |
+| `voucherId` | `text` | Nullable |
+| `idempotencyKey` | `text` |  |
+| `holdExpiresAt` | `timestamp` | Nullable |
+| `createdAt` | `timestamp` |  |
+| `updatedAt` | `timestamp` |  |
+
+### Table `booking_items`
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `id` | `text` | Primary |
+| `bookingId` | `text` |  |
+| `ticketCategoryId` | `text` |  |
+| `quantity` | `int4` |  |
+| `unitPrice` | `numeric` |  |
+
+### Table `voucher_redemptions`
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `id` | `text` | Primary |
+| `voucherId` | `text` |  |
+| `bookingId` | `text` |  |
+| `userId` | `text` |  |
+| `createdAt` | `timestamp` |  |
+
+### Enums
+
+| Enum | Values |
+|------|--------|
+| `Role` | `CUSTOMER`, `OPERATOR` |
+| `ConcertStatus` | `DRAFT`, `PUBLISHED`, `CANCELLED` |
+| `BookingStatus` | `PENDING_PAYMENT`, `CONFIRMED`, `CANCELLED`, `EXPIRED`, `FAILED` |
+| `DiscountType` | `PERCENTAGE`, `FIXED` |
 
 ## Project structure
 
