@@ -16,6 +16,8 @@ that consumes the API.
 - Node.js 20+
 - Docker Desktop (for local Postgres + Redis)
 
+## Link Deployment: https://event-ticket-booking-indol.vercel.app
+
 ## Setup & run locally
 
 ```bash
